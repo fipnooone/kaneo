@@ -9,6 +9,7 @@ import { HTTPException } from "hono/http-exception";
 import { auth } from "../auth";
 import { apiRouter, createRoute, jsonResponse } from "../openapi";
 import { type BanState, isBanActive } from "../utils/user-ban";
+import { verifyApiKey } from "../utils/verify-api-key";
 import {
   beginMcpAuthorization,
   decideMcpAuthorizationRequest,
@@ -39,31 +40,55 @@ const internalApiUrl = (
   .replace(/\/api\/?$/, "")
   .replace(/\/+$/, "");
 
-function createMcpServerForUser(token: string): LegacyMcpServer {
+function createMcpServerForUser(
+  token: string,
+  usingApiKey = false,
+): LegacyMcpServer {
   const server = new LegacyMcpServer({
     name: "kaneo-mcp",
     version: "1.0.0",
   });
-  registerMcpTools(toMcpToolRegistrar(server), internalApiUrl, token);
+  registerMcpTools(
+    toMcpToolRegistrar(server),
+    internalApiUrl,
+    token,
+    usingApiKey,
+  );
   return server;
 }
 
 async function validateBearerToken(
   req: Request,
-): Promise<{ userId: string; token: string } | null> {
+): Promise<{ userId: string; token: string; usingApiKey: boolean } | null> {
   const authHeader = req.headers.get("authorization");
+  const apiKeyHeader = req.headers.get("x-api-key")?.trim();
+  if (req.headers.has("authorization") && req.headers.has("x-api-key")) {
+    return null;
+  }
+
+  if (apiKeyHeader) {
+    const verified = await verifyApiKey(apiKeyHeader, { consume: false });
+    if (!verified?.valid || !verified.key) return null;
+    return {
+      userId: verified.key.userId,
+      token: apiKeyHeader,
+      usingApiKey: true,
+    };
+  }
   if (!authHeader) return null;
   const match = authHeader.match(/^Bearer\s+(\S+)$/i);
   if (!match?.[1]) return null;
   const token = match[1];
+  const verified = await verifyApiKey(token, { consume: false });
+  if (verified?.valid && verified.key) {
+    return { userId: verified.key.userId, token, usingApiKey: true };
+  }
 
   const headers = new Headers();
   headers.set("authorization", `Bearer ${token}`);
   const session = await auth.api.getSession({ headers });
-
-  if (!session?.user?.id) return null;
-  if (isBanActive(session.user as BanState)) return null;
-  return { userId: session.user.id, token };
+  if (!session?.user?.id || isBanActive(session.user as BanState)) return null;
+  return { userId: session.user.id, token, usingApiKey: false };
 }
 
 const mcp = apiRouter();
@@ -326,7 +351,11 @@ mcp.all("/mcp", async (c) => {
   }
 
   if (!(await isLegacyRequest(c.req.raw.clone()))) {
-    const modern = createModernMcpHandler(authResult.token, internalApiUrl);
+    const modern = createModernMcpHandler(
+      authResult.token,
+      internalApiUrl,
+      authResult.usingApiKey,
+    );
     return modern.fetch(c.req.raw);
   }
 
@@ -335,7 +364,10 @@ mcp.all("/mcp", async (c) => {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });
-  const server = createMcpServerForUser(authResult.token);
+  const server = createMcpServerForUser(
+    authResult.token,
+    authResult.usingApiKey,
+  );
   await server.connect(transport);
   return transport.handleRequest(c.req.raw);
 });

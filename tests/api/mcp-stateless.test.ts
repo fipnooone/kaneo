@@ -120,6 +120,37 @@ describe("MCP 2026-07-28 stateless HTTP", () => {
     ).toBe(true);
   });
 
+  it("forwards API-key identity calls as x-api-key to the API", async () => {
+    const apiFetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = new URL(String(input)).pathname;
+        expect(new Headers(init?.headers).get("x-api-key")).toBe("raw-api-key");
+        expect(new Headers(init?.headers).has("authorization")).toBe(false);
+        return Response.json(
+          path === "/api/user/me" ? { id: "user-1" } : [{ id: "workspace-1" }],
+        );
+      },
+    );
+    vi.stubGlobal("fetch", apiFetch);
+    const handler = createModernMcpHandler(
+      "raw-api-key",
+      "http://api.test",
+      true,
+    );
+    for (const [name, expected] of [
+      ["whoami", "user-1"],
+      ["list_workspaces", "workspace-1"],
+    ]) {
+      const body = await rpcBody(
+        await handler.fetch(
+          modernRequest("tools/call", 1, { name, arguments: {} }),
+        ),
+      );
+      expect(body.result.content[0].text).toContain(expected);
+    }
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+  });
+
   it("gets one task by ticket ID through the HTTP MCP server", async () => {
     const apiFetch = vi.fn(async (input: RequestInfo | URL) => {
       expect(String(input)).toBe(
