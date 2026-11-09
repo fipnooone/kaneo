@@ -5,11 +5,17 @@ import { MCP_MAX_TOOL_INPUT_ELEMENTS } from "./request-bounds";
 export function createMcpServerForUser(
   token: string,
   internalApiUrl: string,
+  usingApiKey = false,
 ): McpServer {
   const server = new McpServer(
     { name: "kaneo-mcp", version: "1.0.0" },
     { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS },
   );
-  registerMcpTools(toMcpToolRegistrar(server), internalApiUrl, token);
+  registerMcpTools(
+    toMcpToolRegistrar(server),
+    internalApiUrl,
+    token,
+    usingApiKey,
+  );
   return server;
 }

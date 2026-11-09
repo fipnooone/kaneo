@@ -6,6 +6,7 @@ import { MCP_BODY_BYTES, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./request-bounds";
 export function createModernMcpHandler(
   token: string,
   apiUrl: string,
+  usingApiKey = false,
 ): ReturnType<typeof createMcpHandler> {
   return createMcpHandler(
     () => {
@@ -18,7 +19,7 @@ export function createModernMcpHandler(
           maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS,
         },
       );
-      registerMcpTools(toMcpToolRegistrar(server), apiUrl, token);
+      registerMcpTools(toMcpToolRegistrar(server), apiUrl, token, usingApiKey);
       return server;
     },
     {

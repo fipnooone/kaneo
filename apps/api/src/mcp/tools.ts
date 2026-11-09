@@ -27,15 +27,19 @@ export function toMcpToolRegistrar(server: ShapeToolServer): McpToolRegistrar {
 }
 
 class ApiClient {
-  readonly usingApiKey = false;
   constructor(
     private baseUrl: string,
     private token: string,
+    readonly usingApiKey = false,
   ) {}
 
   async json<T = unknown>(path: string, init?: RequestInit): Promise<T> {
     const headers = new Headers(init?.headers);
-    headers.set("Authorization", `Bearer ${this.token}`);
+    if (this.usingApiKey) {
+      headers.set("x-api-key", this.token);
+    } else {
+      headers.set("Authorization", `Bearer ${this.token}`);
+    }
     if (init?.body != null && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
@@ -75,6 +79,7 @@ export function registerMcpTools(
   server: McpToolRegistrar,
   baseUrl: string,
   token: string,
+  usingApiKey = false,
 ): void {
-  registerTools(server, { client: new ApiClient(baseUrl, token) });
+  registerTools(server, { client: new ApiClient(baseUrl, token, usingApiKey) });
 }

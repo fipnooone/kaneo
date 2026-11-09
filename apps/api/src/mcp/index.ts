@@ -8,6 +8,8 @@ import { HTTPException } from "hono/http-exception";
 import { auth } from "../auth";
 import { apiRouter, createRoute, jsonResponse } from "../openapi";
 import { type BanState, isBanActive } from "../utils/user-ban";
+import { verifyApiKey } from "../utils/verify-api-key";
+import { apiKeyRejection } from "../utils/api-key-rejection";
 import {
   beginMcpAuthorization,
   decideMcpAuthorizationRequest,
@@ -44,12 +46,30 @@ const internalApiUrl = (
 
 async function validateBearerToken(
   req: Request,
-): Promise<{ userId: string; token: string } | null> {
+): Promise<{ userId: string; token: string; usingApiKey: boolean } | null> {
   const authHeader = req.headers.get("authorization");
+  if (req.headers.has("authorization") && req.headers.has("x-api-key")) {
+    return null;
+  }
+  if (req.headers.has("x-api-key")) {
+    const token = req.headers.get("x-api-key")?.trim();
+    if (!token) return null;
+    const verified = await verifyApiKey(token, { consume: false });
+    if (verified?.status !== "valid") {
+      if (verified) throw apiKeyRejection(verified);
+      return null;
+    }
+    return { userId: verified.key.userId, token, usingApiKey: true };
+  }
   if (!authHeader) return null;
   const match = authHeader.match(/^Bearer\s+(\S+)$/i);
   if (!match?.[1]) return null;
   const token = match[1];
+  const verified = await verifyApiKey(token, { consume: false });
+  if (verified?.status === "valid") {
+    return { userId: verified.key.userId, token, usingApiKey: true };
+  }
+  if (verified) throw apiKeyRejection(verified);
 
   const headers = new Headers();
   headers.set("authorization", `Bearer ${token}`);
@@ -57,7 +77,7 @@ async function validateBearerToken(
 
   if (!session?.user?.id) return null;
   if (isBanActive(session.user as BanState)) return null;
-  return { userId: session.user.id, token };
+  return { userId: session.user.id, token, usingApiKey: false };
 }
 
 const mcp = apiRouter();
@@ -330,7 +350,11 @@ mcp.all("/mcp", async (c) => {
       maxRequestBodySize: MCP_BODY_BYTES,
     }))
   ) {
-    const modern = createModernMcpHandler(authResult.token, internalApiUrl);
+    const modern = createModernMcpHandler(
+      authResult.token,
+      internalApiUrl,
+      authResult.usingApiKey,
+    );
     return modern.fetch(c.req.raw);
   }
 
@@ -340,7 +364,11 @@ mcp.all("/mcp", async (c) => {
     sessionIdGenerator: undefined,
     maxRequestBodySize: MCP_BODY_BYTES,
   });
-  const server = createMcpServerForUser(authResult.token, internalApiUrl);
+  const server = createMcpServerForUser(
+    authResult.token,
+    internalApiUrl,
+    authResult.usingApiKey,
+  );
   await server.connect(transport);
   return transport.handleRequest(c.req.raw);
 });

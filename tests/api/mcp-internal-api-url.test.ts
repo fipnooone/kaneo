@@ -4,6 +4,10 @@ const authMocks = vi.hoisted(() => ({
   getSession: vi.fn(async () => ({ user: { id: "test-user" } })),
 }));
 
+vi.mock("../../apps/api/src/utils/verify-api-key", () => ({
+  verifyApiKey: vi.fn(async () => null),
+}));
+
 vi.mock("../../apps/api/src/auth", () => ({
   auth: { api: { getSession: authMocks.getSession } },
 }));
