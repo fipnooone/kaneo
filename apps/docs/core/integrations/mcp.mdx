@@ -24,6 +24,8 @@ https://your-kaneo-instance.com/api/mcp
 
 With an OAuth-capable client, you will be redirected to Kaneo to sign in and explicitly approve the MCP client. After approval, all MCP tools run as your authenticated user.
 
+For headless clients, create a Kaneo API key in **Settings → Account → Developer** and send it on every MCP request using either `Authorization: Bearer <api-key>` or `x-api-key: <api-key>`. Send only one authentication header; requests containing both are rejected. API-key requests run with the key owner’s access and applicable key permissions. Cookie-only authentication is not accepted by this endpoint. Keep keys in your client’s secret configuration, never in URLs or committed files.
+
 The endpoint implements OAuth 2.1 with PKCE for authentication. Discovery metadata is available at:
 
 - `/.well-known/oauth-protected-resource/api/mcp`
